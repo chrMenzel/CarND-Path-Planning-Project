@@ -160,7 +160,7 @@ int main() {
 
           if (otherCarTooClose) {
             if (referenceVelocity > speedChecker - 5) {
-              referenceVelocity -= .224;  // 0.24
+              referenceVelocity -= .25;
             }
             if (rightIsFree && lane < 2) {
               lane += 1;
