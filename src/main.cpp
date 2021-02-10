@@ -51,8 +51,12 @@ int main() {
     map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy]
+  // start in lane 1 with reference velocity of 0
+  int lane = 1;
+  double referenceVelocity = 0;
+
+  h.onMessage([&lane, &referenceVelocity, &map_waypoints_x, &map_waypoints_y, &map_waypoints_s,
+               &map_waypoints_dx, &map_waypoints_dy]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -89,16 +93,91 @@ int main() {
           //   of the road.
           auto sensor_fusion = j[1]["sensor_fusion"];
 
-          json msgJson;
-
-          vector<double> next_x_vals;
-          vector<double> next_y_vals;
-
           /**
            * TODO: define a path made up of (x,y) points that the car will visit
            *   sequentially every .02 seconds
            */
 
+          // initialize variables at the start
+          int previousSize = previous_path_x.size();
+          
+          if (previousSize > 0) {
+            car_s = end_path_s;
+          }
+          
+          bool leftIsFree = true;
+          bool rightIsFree = true;
+          bool otherCarTooClose = false;
+
+          double speedChecker;
+
+          // calculation variables outside for loop to save calculation time
+          int sameLineTooNearMax = 2 + 4 * (lane + 0) + 2;
+          int sameLineTooNearMin = 2 + 4 * (lane + 0) - 2;
+
+          int leftLineTooNearMax = 2 + 4 * (lane - 1) + 2;
+          int leftLineTooNearMin = 2 + 4 * (lane - 1) - 2;
+
+          int rightLineTooNearMax = 2 + 4 * (lane + 1) + 2;
+          int rightLineTooNearMin = 2 + 4 * (lane + 1) - 2;
+
+          // work with list of all other cars on the same side of the road
+          for (int i = 0; i < sensor_fusion.size(); i++) {
+
+            // Yes, there is at least one car on the same side 
+            double vx = sensor_fusion[i][3];
+            double vy = sensor_fusion[i][4];
+            speedChecker = sqrt(vx * vx + vy * vy);
+
+            double check_car_s = sensor_fusion[i][5];
+            float d = sensor_fusion[i][6];
+            check_car_s += ((double)previousSize * .02 * speedChecker);
+
+            // avoid calculating the same multiple times
+            bool check_car_s_less_than_30 = (check_car_s > car_s) && ((check_car_s - car_s) < 30);
+            bool check_car_s_greater_than_minus_30 = (check_car_s < car_s) && ((check_car_s - car_s) > -30);
+
+            // car too close in the same line?
+            if (d < sameLineTooNearMax && d > sameLineTooNearMin) {
+              if (check_car_s_less_than_30) {
+                otherCarTooClose = true;
+              }
+            }
+
+            // check if left lane is free
+            if (d < leftLineTooNearMax && d > leftLineTooNearMin) {
+              if (check_car_s_less_than_30 || check_car_s_greater_than_minus_30) {
+                leftIsFree = false;
+              }
+            }
+
+            // check if right lane is free
+            if (d < rightLineTooNearMax && d > rightLineTooNearMin) {
+              if (check_car_s_less_than_30 || check_car_s_greater_than_minus_30) {
+                rightIsFree = false;
+              }
+            }
+          }
+
+          if (otherCarTooClose) {
+            if (referenceVelocity > speedChecker - 5) {
+              referenceVelocity -= 1;  // 0.24
+            }
+            if (rightIsFree && lane < 2) {
+              lane += 1;
+            }
+            if (leftIsFree && lane > 0) {
+              lane -= 1;
+            }
+          }
+          else if (referenceVelocity < 49.5) {
+            referenceVelocity += 0.224;
+          }
+
+          json msgJson;
+
+          vector<double> next_x_vals;
+          vector<double> next_y_vals;
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
